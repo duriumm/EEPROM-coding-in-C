@@ -199,10 +199,12 @@ void eeprom_write_byte(uint8_t eepromAdress, uint8_t data, uint8_t myDataAddress
 
 }
 
+// NOT USED NOW
 // Function to write one char at a time to eeproms "myDataAddress++" and then read out from them.
 // We take in an array of chars pre chose and write each char[i] from that array into our memory address of choice
 // We then read from that address and increment both the char[i] in array and myDataAddress++
 // In VG uppgift i will separate this function into read and write.
+/*
 void i2c_write_name(char * nameArray, uint8_t eepromAdress, uint8_t myDataAddress){
 	uint8_t i = 0;
 	uint8_t dataToPrint;
@@ -213,16 +215,72 @@ void i2c_write_name(char * nameArray, uint8_t eepromAdress, uint8_t myDataAddres
 		eeprom_wait_until_write_complete(eepromAdress);
 
 		printf_P(PSTR("%c"), eeprom_read_byte(eepromAdress, myDataAddress));
-		myDataAddress++;
 		i++;
 	}
 }
+*/
 
+/* Instead of generating a Stop condition, the master transmits 
+up to EIGHT data bytes to the eeprom, which are temporarily stored
+in the on-chip page buffer and will be written into memory once the master has transmitted a Stop condition */
+void eeprom_write_page(uint8_t eepromAddress, uint8_t myWriteAddress, uint8_t * arrayOfDataToWrite) {
 
-void eeprom_write_page(uint8_t addr, uint8_t *data) {
-	// ... (VG)
+	while (myWriteAddress % 8 != 0)	// As describes in the datasheet and above here we want our writingAddress 									
+    {								// to be a multiple of 8. Otherwise the writing does not work as intended.
+        myWriteAddress++;			// Therefor we increment myWriteAddress untill its an multiple of 8.
+    }
+	uint8_t index = 0;
+	i2c_start();											// start
+	i2c_emit_addr(eepromAddress, I2C_W);					// Write to eeprom
+	i2c_emit_byte(myWriteAddress);							// Addres on eeprom we want to write into
+
+	while(arrayOfDataToWrite[index] != '\0' || index <= 7){ // Transmit up to EIGHT data bytes hence index <= 7
+
+		i2c_emit_byte(arrayOfDataToWrite[index]);			// temporarily store char byte in in-chip page buffer.
+		index++;											// increment.
+	}
+
+	i2c_stop();										 		// Stop condition transmitted so after this we write into memory.
+	eeprom_wait_until_write_complete(eepromAddress); 		// Wait untill write is complete.
 }
 
-void eeprom_sequential_read(uint8_t *buf, uint8_t start_addr, uint8_t len) {
-	// ... (VG)
+/* 	
+To provide sequential reads, the 24AA02XUID contains
+an internal Address Pointer that is incremented by one
+upon completion of each operation. This Address
+Pointer allows the entire memory contents to be serially
+read during one operation.	*/
+void eeprom_sequential_read(uint8_t eepromAddress, uint8_t myReadAddress, uint8_t len, uint8_t hex1_char0) {
+
+	i2c_start();									// start
+	i2c_emit_addr(eepromAddress, I2C_W);			// Write to eeprom
+	i2c_emit_byte(myReadAddress);					// send memory address to read from(myReadAddress where we get out data from)
+	i2c_start();									// restart
+	i2c_emit_addr(eepromAddress, I2C_R);			// Read from eeprom
+	uint8_t dataBuf;
+
+	uint8_t i = 0;
+	while(i < len){ 								// Print out the databuf from i2c_read_ACK 
+		dataBuf = i2c_read_ACK();	
+		//  If_else here is just if we want text as char or as hex
+		if(hex1_char0 == 1){
+			printf_P(PSTR("%x"), dataBuf);
+		}	
+		else if(hex1_char0 == 0){
+			printf_P(PSTR("%c"), dataBuf);
+		}								
+		i++;
+	}
+	
+	//  If_else here is just if we want text as char or as hex
+	if(hex1_char0 == 1){
+		dataBuf = i2c_read_NAK();						// Read out last character with NAK() 
+		printf_P(PSTR("%x\n"), dataBuf);
+	}	
+	else if(hex1_char0 == 0){
+		dataBuf = i2c_read_NAK();						// Read out last character with NAK() 
+		printf_P(PSTR("%c\n"), dataBuf);
+	}	
+	
+	i2c_stop(); 									// then we stop the transmission.
 }
